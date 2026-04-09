@@ -35,6 +35,19 @@ export default function AdminDashboard() {
     useState([]);
   const [teacherMessage, setTeacherMessage] = useState("");
 
+  const [selectedReviewSubject, setSelectedReviewSubject] = useState(null);
+  const [selectedStudentReviewSubject, setSelectedStudentReviewSubject] =
+    useState(null);
+  const [showAdminAllStudentsInSubject, setShowAdminAllStudentsInSubject] =
+    useState(false);
+  const [showAdminCompletedStudentsInSubject, setShowAdminCompletedStudentsInSubject] =
+    useState(false);
+  const [showAdminMarkedStudentsInSubject, setShowAdminMarkedStudentsInSubject] =
+    useState(false);
+
+  const [marksInputs, setMarksInputs] = useState({});
+  const [savedMarks, setSavedMarks] = useState({});
+
   const [newStudent, setNewStudent] = useState({
     id: "",
     name: "",
@@ -52,9 +65,7 @@ export default function AdminDashboard() {
   const leaderboard = useMemo(() => {
     return [...students]
       .map((student) => {
-        const receivedReviews = reviews.filter(
-          (r) => r.reviewFor === student.id
-        );
+        const receivedReviews = reviews.filter((r) => r.reviewFor === student.id);
 
         const totalMarks = receivedReviews.reduce(
           (sum, r) => sum + Number(r.marks || 0),
@@ -73,6 +84,29 @@ export default function AdminDashboard() {
       })
       .sort((a, b) => Number(b.avg) - Number(a.avg));
   }, [students, reviews]);
+
+  const reviewSubjects = useMemo(() => {
+    const subjectMap = {};
+
+    reviews.forEach((review) => {
+      const subjectName = review.subject || "No Subject";
+      if (!subjectMap[subjectName]) {
+        subjectMap[subjectName] = [];
+      }
+      subjectMap[subjectName].push(review);
+    });
+
+    return Object.entries(subjectMap).map(([subject, list]) => ({
+      subject,
+      reviews: list,
+      total: list.length,
+      completed: list.filter((r) => r.status === "Completed").length,
+      pending: list.filter((r) => r.status !== "Completed").length,
+      marked: list.filter((r) => Number(r.marks || 0) > 0).length,
+    }));
+  }, [reviews]);
+
+  const totalReviewSubjectsCount = reviewSubjects.length;
 
   function getStudentAssignedReviews(studentId) {
     return reviews.filter((r) => r.reviewer === studentId);
@@ -127,6 +161,37 @@ export default function AdminDashboard() {
       completedStudents,
       pendingStudents,
     };
+  }
+
+  function getSubjectReviews(subjectName) {
+    return reviews.filter((review) => (review.subject || "No Subject") === subjectName);
+  }
+
+  function getCompletedSubjectReviews(subjectName) {
+    return getSubjectReviews(subjectName).filter(
+      (review) => review.status === "Completed"
+    );
+  }
+
+  function getMarkedSubjectReviews(subjectName) {
+    return getSubjectReviews(subjectName).filter(
+      (review) => Number(review.marks || 0) > 0
+    );
+  }
+
+  function getPendingSubjectReviews(subjectName) {
+    return getSubjectReviews(subjectName).filter(
+      (review) => review.status !== "Completed"
+    );
+  }
+
+  function getSubjectReviewsForStudent(studentId) {
+    return getStudentAssignedReviews(studentId).reduce((acc, review) => {
+      const subjectName = review.subject || "No Subject";
+      if (!acc[subjectName]) acc[subjectName] = [];
+      acc[subjectName].push(review);
+      return acc;
+    }, {});
   }
 
   async function handleAddStudent(e) {
@@ -198,6 +263,84 @@ export default function AdminDashboard() {
     setTeacherMessage(ok ? "Student removed successfully ✅" : "Remove failed ❌");
   }
 
+  function handleMarksInput(review, value) {
+    const realIndex = reviews.findIndex((r) => r.reviewId === review.reviewId);
+
+    setMarksInputs((prev) => ({
+      ...prev,
+      [realIndex]: value,
+    }));
+
+    setSavedMarks((prev) => ({
+      ...prev,
+      [realIndex]: false,
+    }));
+  }
+
+  function getInputValue(review) {
+    const realIndex = reviews.findIndex((r) => r.reviewId === review.reviewId);
+
+    return marksInputs[realIndex] !== undefined
+      ? marksInputs[realIndex]
+      : Number(review.marks || 0);
+  }
+
+  async function handleSaveMarks(review) {
+    const realIndex = reviews.findIndex((r) => r.reviewId === review.reviewId);
+
+    const value =
+      marksInputs[realIndex] !== undefined
+        ? marksInputs[realIndex]
+        : Number(review.marks || 0);
+
+    await updateMarks(realIndex, value);
+
+    setSavedMarks((prev) => ({
+      ...prev,
+      [realIndex]: true,
+    }));
+  }
+
+  function renderMarksEditor(review) {
+    const realIndex = reviews.findIndex((r) => r.reviewId === review.reviewId);
+    const isSaved = savedMarks[realIndex];
+
+    return (
+      <div style={{ marginTop: "10px" }}>
+        <label>Marks (out of 10)</label>
+        <div
+          style={{
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+            flexWrap: "wrap",
+            marginTop: "6px",
+          }}
+        >
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="1"
+            value={getInputValue(review)}
+            onChange={(e) => handleMarksInput(review, e.target.value)}
+            style={{ maxWidth: "140px" }}
+          />
+
+          <button
+            className="primary-btn"
+            style={{
+              background: isSaved ? "#22c55e" : undefined,
+            }}
+            onClick={() => handleSaveMarks(review)}
+          >
+            {isSaved ? "Saved ✅" : "Save"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const overall = getOverallStudentAnalysis();
   const markedReviewsCount = reviews.filter(
     (r) => Number(r.marks || 0) > 0
@@ -244,6 +387,7 @@ export default function AdminDashboard() {
                   setSelectedStudent(null);
                   setShowStudentList(false);
                   setShowStudentProgressList(false);
+                  setSelectedStudentReviewSubject(null);
                 }}
               >
                 <h3>Total Students</h3>
@@ -268,10 +412,16 @@ export default function AdminDashboard() {
               <div
                 className="card"
                 style={{ cursor: "pointer" }}
-                onClick={() => setScreen("reviews")}
+                onClick={() => {
+                  setScreen("reviews");
+                  setSelectedReviewSubject(null);
+                  setShowAdminAllStudentsInSubject(false);
+                  setShowAdminCompletedStudentsInSubject(false);
+                  setShowAdminMarkedStudentsInSubject(false);
+                }}
               >
                 <h3>Total Reviews</h3>
-                <p>{reviews.length}</p>
+                <p>{totalReviewSubjectsCount}</p>
               </div>
             </div>
 
@@ -307,11 +457,11 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {screen === "reviews" && (
+        {screen === "reviews" && !selectedReviewSubject && (
           <>
             <div className="admin-header">
               <h2>All Reviews</h2>
-              <p>See every review, status, and marks in one place</p>
+              <p>Reviews are grouped by subject / course</p>
             </div>
 
             <div style={{ marginBottom: "24px" }}>
@@ -322,8 +472,8 @@ export default function AdminDashboard() {
 
             <div className="dashboard-grid">
               <div className="card">
-                <h3>Total Reviews</h3>
-                <p>{reviews.length}</p>
+                <h3>Total Subjects / Courses</h3>
+                <p>{totalReviewSubjectsCount}</p>
               </div>
 
               <div className="card">
@@ -338,37 +488,189 @@ export default function AdminDashboard() {
             </div>
 
             <div className="card">
-              <h3>Review List</h3>
-              {reviews.length === 0 ? (
+              <h3>Subject / Course List</h3>
+              {reviewSubjects.length === 0 ? (
                 <p>No reviews available</p>
               ) : (
-                reviews.map((review, index) => (
-                  <div
-                    key={review.reviewId || index}
-                    style={{
-                      marginBottom: "16px",
-                      paddingBottom: "12px",
-                      borderBottom: "1px solid rgba(255,255,255,0.08)",
+                reviewSubjects.map((item, index) => (
+                  <button
+                    key={`${item.subject}-${index}`}
+                    className="primary-btn"
+                    style={{ marginRight: "12px", marginBottom: "12px" }}
+                    onClick={() => {
+                      setSelectedReviewSubject(item.subject);
+                      setShowAdminAllStudentsInSubject(false);
+                      setShowAdminCompletedStudentsInSubject(false);
+                      setShowAdminMarkedStudentsInSubject(false);
                     }}
                   >
-                    <strong>{review.group || "No Group"}</strong>
-                    <div>Reviewer: {review.reviewer}</div>
-                    <div>Status: {review.status}</div>
-                    <div>Marks: {review.marks}/100</div>
-
-                    <div style={{ marginTop: "8px" }}>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={review.marks}
-                        onChange={(e) => updateMarks(index, e.target.value)}
-                      />
-                    </div>
-                  </div>
+                    {item.subject}
+                  </button>
                 ))
               )}
             </div>
+          </>
+        )}
+
+        {screen === "reviews" && selectedReviewSubject && (
+          <>
+            <div className="admin-header">
+              <h2>{selectedReviewSubject}</h2>
+              <p>Subject-wise review tracking</p>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <button
+                className="primary-btn"
+                onClick={() => {
+                  setSelectedReviewSubject(null);
+                  setShowAdminAllStudentsInSubject(false);
+                  setShowAdminCompletedStudentsInSubject(false);
+                  setShowAdminMarkedStudentsInSubject(false);
+                }}
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="dashboard-grid">
+              <div
+                className="card"
+                style={{ cursor: "pointer" }}
+                onClick={() =>
+                  setShowAdminAllStudentsInSubject(!showAdminAllStudentsInSubject)
+                }
+              >
+                <h3>Total Students</h3>
+                <p>{getSubjectReviews(selectedReviewSubject).length}</p>
+              </div>
+
+              <div
+                className="card"
+                style={{ cursor: "pointer" }}
+                onClick={() =>
+                  setShowAdminCompletedStudentsInSubject(
+                    !showAdminCompletedStudentsInSubject
+                  )
+                }
+              >
+                <h3>Completed Students</h3>
+                <p>{getCompletedSubjectReviews(selectedReviewSubject).length}</p>
+              </div>
+
+              <div
+                className="card"
+                style={{ cursor: "pointer" }}
+                onClick={() =>
+                  setShowAdminMarkedStudentsInSubject(
+                    !showAdminMarkedStudentsInSubject
+                  )
+                }
+              >
+                <h3>Students With Marks</h3>
+                <p>{getMarkedSubjectReviews(selectedReviewSubject).length}</p>
+              </div>
+            </div>
+
+            {showAdminAllStudentsInSubject && (
+              <div className="card">
+                <h3>All Students In This Subject</h3>
+                {getSubjectReviews(selectedReviewSubject).length === 0 ? (
+                  <p>No students</p>
+                ) : (
+                  getSubjectReviews(selectedReviewSubject).map((review, i) => (
+                    <div
+                      key={review.reviewId || i}
+                      style={{
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <strong>{review.reviewer}</strong>
+                      <div>Status: {review.status}</div>
+                      <div>Group: {review.group || "No Group"}</div>
+                      <div>Marks: {Number(review.marks || 0)}/10</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {showAdminCompletedStudentsInSubject && (
+              <div className="card">
+                <h3>Completed Students</h3>
+                {getCompletedSubjectReviews(selectedReviewSubject).length === 0 ? (
+                  <p>No completed students</p>
+                ) : (
+                  getCompletedSubjectReviews(selectedReviewSubject).map(
+                    (review, i) => (
+                      <div
+                        key={review.reviewId || i}
+                        style={{
+                          marginBottom: "16px",
+                          paddingBottom: "12px",
+                          borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        }}
+                      >
+                        <strong>{review.reviewer}</strong>
+                        <div>Status: {review.status}</div>
+                        <div>Group: {review.group || "No Group"}</div>
+                        <div>
+                          Submitted File:{" "}
+                          {review.fileName ? review.fileName : "Not uploaded yet"}
+                        </div>
+
+                        {review.fileUrl && (
+                          <div
+                            style={{
+                              marginTop: "6px",
+                              display: "flex",
+                              gap: "12px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <a href={review.fileUrl} target="_blank" rel="noreferrer">
+                              View Uploaded File
+                            </a>
+                            <a href={review.fileUrl} download>
+                              Download File
+                            </a>
+                          </div>
+                        )}
+
+                        {renderMarksEditor(review)}
+                      </div>
+                    )
+                  )
+                )}
+              </div>
+            )}
+
+            {showAdminMarkedStudentsInSubject && (
+              <div className="card">
+                <h3>Students With Assigned Marks</h3>
+                {getMarkedSubjectReviews(selectedReviewSubject).length === 0 ? (
+                  <p>No students with marks yet</p>
+                ) : (
+                  getMarkedSubjectReviews(selectedReviewSubject).map((review, i) => (
+                    <div
+                      key={review.reviewId || i}
+                      style={{
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <strong>{review.reviewer}</strong>
+                      <div>Subject: {review.subject || "No Subject"}</div>
+                      <div>Marks: {Number(review.marks || 0)}/10</div>
+                      {renderMarksEditor(review)}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </>
         )}
 
@@ -605,6 +907,7 @@ export default function AdminDashboard() {
                             style={{ cursor: "pointer" }}
                             onClick={() => {
                               setSelectedStudent(student);
+                              setSelectedStudentReviewSubject(null);
                             }}
                           >
                             <strong>{student.name}</strong> — {student.id}
@@ -634,7 +937,7 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {screen === "students" && selectedStudent && (
+        {screen === "students" && selectedStudent && !selectedStudentReviewSubject && (
           <>
             <div className="admin-header">
               <h2>{selectedStudent.name}</h2>
@@ -724,28 +1027,65 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <h4>Assigned Reviews</h4>
-              {getStudentAssignedReviews(selectedStudent.id).length === 0 ? (
-                <p>No assigned reviews</p>
+              <h4>Assigned Subjects</h4>
+              {Object.keys(getSubjectReviewsForStudent(selectedStudent.id)).length === 0 ? (
+                <p>No assigned subjects</p>
               ) : (
-                getStudentAssignedReviews(selectedStudent.id).map((review, i) => (
-                  <div key={review.reviewId || i} style={{ marginBottom: "10px" }}>
-                    <strong>{review.group || "No Group"}</strong> —{" "}
-                    {review.status}
-                  </div>
-                ))
+                Object.keys(getSubjectReviewsForStudent(selectedStudent.id)).map(
+                  (subjectName, i) => (
+                    <button
+                      key={`${subjectName}-${i}`}
+                      className="primary-btn"
+                      style={{ marginRight: "10px", marginBottom: "10px" }}
+                      onClick={() => setSelectedStudentReviewSubject(subjectName)}
+                    >
+                      {subjectName}
+                    </button>
+                  )
+                )
               )}
+            </div>
+          </>
+        )}
 
-              <h4 style={{ marginTop: "20px" }}>Received Marks</h4>
-              {getStudentReceivedReviews(selectedStudent.id).length === 0 ? (
-                <p>No received reviews yet</p>
+        {screen === "students" && selectedStudent && selectedStudentReviewSubject && (
+          <>
+            <div className="admin-header">
+              <h2>{selectedStudent.name}</h2>
+              <p>{selectedStudentReviewSubject}</p>
+            </div>
+
+            <div style={{ marginBottom: "24px" }}>
+              <button
+                className="primary-btn"
+                onClick={() => setSelectedStudentReviewSubject(null)}
+              >
+                Back
+              </button>
+            </div>
+
+            <div className="card">
+              <h3>Subject Reviews</h3>
+              {getSubjectReviewsForStudent(selectedStudent.id)[selectedStudentReviewSubject]?.length === 0 ? (
+                <p>No reviews found</p>
               ) : (
-                getStudentReceivedReviews(selectedStudent.id).map((review, i) => (
-                  <div key={review.reviewId || i} style={{ marginBottom: "10px" }}>
-                    <strong>{review.group || "No Group"}</strong> —{" "}
-                    {review.marks}/100
-                  </div>
-                ))
+                getSubjectReviewsForStudent(selectedStudent.id)[selectedStudentReviewSubject].map(
+                  (review, i) => (
+                    <div
+                      key={review.reviewId || i}
+                      style={{
+                        marginBottom: "16px",
+                        paddingBottom: "12px",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      <div>Status: {review.status}</div>
+                      <div>Group: {review.group || "No Group"}</div>
+                      <div>Marks: {Number(review.marks || 0)}/10</div>
+                      {renderMarksEditor(review)}
+                    </div>
+                  )
+                )
               )}
             </div>
           </>
@@ -797,7 +1137,7 @@ export default function AdminDashboard() {
 
               <div className="card">
                 <h3>Total Reviews</h3>
-                <p>{reviews.length}</p>
+                <p>{totalReviewSubjectsCount}</p>
               </div>
             </div>
 

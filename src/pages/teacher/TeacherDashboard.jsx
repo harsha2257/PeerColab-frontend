@@ -4,19 +4,29 @@ import { useAppData } from "../../context/AppDataContext";
 
 export default function TeacherDashboard() {
   const { profile, signOut } = useAuth();
-  const { students, reviews, assignReview, updateMarks, feedbacks = [] } =
-    useAppData();
+  const { students, reviews, assignReview, updateMarks } = useAppData();
 
   const [screen, setScreen] = useState("home");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showCreateReview, setShowCreateReview] = useState(false);
+  const [showStudentSelector, setShowStudentSelector] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState(null);
+  const [selectedCompletedSubject, setSelectedCompletedSubject] =
+    useState(null);
+
+  const [showCourseAllStudents, setShowCourseAllStudents] = useState(false);
+  const [showCourseCompletedStudents, setShowCourseCompletedStudents] =
+    useState(false);
+  const [showCourseRemainingStudents, setShowCourseRemainingStudents] =
+    useState(false);
+
   const [marksInputs, setMarksInputs] = useState({});
   const [savedMarks, setSavedMarks] = useState({});
 
   const [form, setForm] = useState({
     subject: "",
     group: "",
-    reviewer: "",
+    reviewers: [],
     startDate: "",
     endDate: "",
   });
@@ -26,17 +36,71 @@ export default function TeacherDashboard() {
   }, [students, profile]);
 
   const myReviews = useMemo(() => {
-    return reviews.filter((r) =>
-      myStudents.some((s) => s.id === r.reviewer)
-    );
+    return reviews.filter((r) => myStudents.some((s) => s.id === r.reviewer));
   }, [reviews, myStudents]);
+
+  const totalCoursesCount = useMemo(() => {
+    const subjectSet = new Set(
+      myReviews.map((review) => review.subject || "No Subject")
+    );
+    return subjectSet.size;
+  }, [myReviews]);
 
   const completedReviews = myReviews.filter(
     (r) => r.status === "Completed"
   ).length;
 
+  const pendingReviews = myReviews.filter(
+    (r) => r.status !== "Completed"
+  ).length;
+
+  const totalSubjectGroups = useMemo(() => {
+    const grouped = {};
+
+    myReviews.forEach((review) => {
+      const subjectName = review.subject || "No Subject";
+      if (!grouped[subjectName]) grouped[subjectName] = [];
+      grouped[subjectName].push(review);
+    });
+
+    return Object.entries(grouped).map(([subject, reviewList]) => ({
+      subject,
+      reviews: reviewList,
+      total: reviewList.length,
+      completed: reviewList.filter((r) => r.status === "Completed").length,
+      pending: reviewList.filter((r) => r.status !== "Completed").length,
+    }));
+  }, [myReviews]);
+
+  const completedSubjectGroups = useMemo(() => {
+    const grouped = {};
+
+    myReviews
+      .filter((review) => review.status === "Completed")
+      .forEach((review) => {
+        const subjectName = review.subject || "No Subject";
+        if (!grouped[subjectName]) grouped[subjectName] = [];
+        grouped[subjectName].push(review);
+      });
+
+    return Object.entries(grouped).map(([subject, reviewList]) => ({
+      subject,
+      reviews: reviewList,
+      total: reviewList.length,
+    }));
+  }, [myReviews]);
+
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
+  }
+
+  function handleReviewerToggle(studentId) {
+    setForm((prev) => ({
+      ...prev,
+      reviewers: prev.reviewers.includes(studentId)
+        ? prev.reviewers.filter((id) => id !== studentId)
+        : [...prev.reviewers, studentId],
+    }));
   }
 
   function getStudentAssignedReviews(studentId) {
@@ -68,41 +132,39 @@ export default function TeacherDashboard() {
     if (
       !form.subject ||
       !form.group ||
-      !form.reviewer ||
+      form.reviewers.length === 0 ||
       !form.startDate ||
       !form.endDate
     ) {
       return;
     }
 
-    await assignReview(
-      form.group,
-      form.reviewer,
-      form.startDate,
-      form.endDate,
-      form.subject,
-      profile?.id
-    );
+    for (const reviewerId of form.reviewers) {
+      await assignReview(
+        form.group,
+        reviewerId,
+        form.startDate,
+        form.endDate,
+        form.subject,
+        profile?.id
+      );
+    }
 
     setForm({
       subject: "",
       group: "",
-      reviewer: "",
+      reviewers: [],
       startDate: "",
       endDate: "",
     });
 
+    setShowStudentSelector(false);
     setShowCreateReview(false);
-    setScreen("reviews");
+    setScreen("reviewsHome");
   }
 
   function getRealReviewIndex(review) {
     return reviews.findIndex((r) => r === review);
-  }
-
-  function getFeedbackCount(review) {
-    const realIndex = getRealReviewIndex(review);
-    return feedbacks.filter((f) => f.reviewIndex === realIndex).length;
   }
 
   function getStudentName(id) {
@@ -154,28 +216,285 @@ export default function TeacherDashboard() {
 
     return (
       <div style={{ marginTop: "10px" }}>
-        <label>Marks</label>
-        <input
-          type="number"
-          min="0"
-          max="100"
-          value={getInputValue(review)}
-          onChange={(e) => handleMarksInput(review, e.target.value)}
-          style={{ marginTop: "6px" }}
-        />
-
-        <button
-          className="primary-btn"
+        <label>Marks (out of 10)</label>
+        <div
           style={{
-            marginTop: "10px",
-            background: isSaved ? "#22c55e" : undefined,
-            cursor: isSaved ? "not-allowed" : "pointer",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+            flexWrap: "wrap",
           }}
-          disabled={!!isSaved}
-          onClick={() => handleSaveMarks(review)}
         >
-          {isSaved ? "Saved ✅" : "Save Marks"}
-        </button>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="1"
+            value={getInputValue(review)}
+            onChange={(e) => handleMarksInput(review, e.target.value)}
+            style={{ marginTop: "6px", maxWidth: "140px" }}
+          />
+
+          <button
+            className="primary-btn"
+            style={{
+              marginTop: "6px",
+              background: isSaved ? "#22c55e" : undefined,
+              cursor: isSaved ? "not-allowed" : "pointer",
+            }}
+            disabled={!!isSaved}
+            onClick={() => handleSaveMarks(review)}
+          >
+            {isSaved ? "Saved ✅" : "Save Marks"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function getSubjectReviews(subjectName) {
+    return myReviews.filter(
+      (review) => (review.subject || "No Subject") === subjectName
+    );
+  }
+
+  function getSubjectCompletedReviews(subjectName) {
+    return getSubjectReviews(subjectName).filter(
+      (review) => review.status === "Completed"
+    );
+  }
+
+  function getSubjectRemainingReviews(subjectName) {
+    return getSubjectReviews(subjectName).filter(
+      (review) => review.status !== "Completed"
+    );
+  }
+
+  function renderTotalSubjectDetails(subjectName) {
+    const subjectReviews = getSubjectReviews(subjectName);
+    const completedList = getSubjectCompletedReviews(subjectName);
+    const remainingList = getSubjectRemainingReviews(subjectName);
+
+    return (
+      <>
+        <div className="dashboard-grid">
+          <div
+            className="card"
+            style={{ cursor: "pointer" }}
+            onClick={() => setShowCourseAllStudents(!showCourseAllStudents)}
+          >
+            <h3>Total Students</h3>
+            <p>{subjectReviews.length}</p>
+          </div>
+
+          <div
+            className="card"
+            style={{ cursor: "pointer" }}
+            onClick={() =>
+              setShowCourseCompletedStudents(!showCourseCompletedStudents)
+            }
+          >
+            <h3>Completed Submission</h3>
+            <p>{completedList.length}</p>
+          </div>
+
+          <div
+            className="card"
+            style={{ cursor: "pointer" }}
+            onClick={() =>
+              setShowCourseRemainingStudents(!showCourseRemainingStudents)
+            }
+          >
+            <h3>Remaining Students</h3>
+            <p>{remainingList.length}</p>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Course Summary</h3>
+          <div style={{ marginBottom: "10px" }}>
+            <strong>Subject:</strong> {subjectName}
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <strong>Completed:</strong> {completedList.length}
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <strong>Remaining:</strong> {remainingList.length}
+          </div>
+        </div>
+
+        {showCourseAllStudents && (
+          <div className="card">
+            <h3>All Students In This Course</h3>
+            {subjectReviews.length === 0 ? (
+              <p>No students in this course</p>
+            ) : (
+              subjectReviews.map((review, index) => (
+                <div
+                  key={review.reviewId || index}
+                  style={{
+                    marginBottom: "16px",
+                    paddingBottom: "12px",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div>
+                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
+                    {review.reviewer}
+                  </div>
+                  <div>Status: {review.status}</div>
+                  <div>Group: {review.group}</div>
+                  <div>Marks: {review.marks}/10</div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {showCourseCompletedStudents && (
+          <div className="card">
+            <h3>Completed Students</h3>
+            {completedList.length === 0 ? (
+              <p>No completed submissions yet</p>
+            ) : (
+              completedList.map((review, index) => (
+                <div
+                  key={review.reviewId || index}
+                  style={{
+                    marginBottom: "16px",
+                    paddingBottom: "12px",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div>
+                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
+                    {review.reviewer}
+                  </div>
+                  <div>Status: {review.status}</div>
+                  <div>Group: {review.group}</div>
+                  <div>Start Date: {review.startDate || "-"}</div>
+                  <div>Deadline: {review.endDate || "-"}</div>
+                  <div>
+                    Submitted File:{" "}
+                    {review.fileName ? review.fileName : "Not uploaded yet"}
+                  </div>
+
+                  {review.fileUrl && (
+                    <div
+                      style={{
+                        marginTop: "6px",
+                        display: "flex",
+                        gap: "12px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <a href={review.fileUrl} target="_blank" rel="noreferrer">
+                        View Uploaded File
+                      </a>
+                      <a href={review.fileUrl} download>
+                        Download File
+                      </a>
+                    </div>
+                  )}
+
+                  {renderMarksSection(review)}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {showCourseRemainingStudents && (
+          <div className="card">
+            <h3>Remaining Students</h3>
+            {remainingList.length === 0 ? (
+              <p>No remaining students</p>
+            ) : (
+              remainingList.map((review, index) => (
+                <div
+                  key={review.reviewId || index}
+                  style={{
+                    marginBottom: "16px",
+                    paddingBottom: "12px",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  <div>
+                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
+                    {review.reviewer}
+                  </div>
+                  <div>Status: {review.status}</div>
+                  <div>Group: {review.group}</div>
+                  <div>Start Date: {review.startDate || "-"}</div>
+                  <div>Deadline: {review.endDate || "-"}</div>
+                  <div>Submitted File: Not uploaded yet</div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderCompletedSubjectDetails(subjectName) {
+    const subjectReviews = getSubjectCompletedReviews(subjectName);
+
+    return (
+      <div className="card">
+        <h3>Completed Reviews Under {subjectName}</h3>
+        {subjectReviews.length === 0 ? (
+          <p>No completed submissions</p>
+        ) : (
+          subjectReviews.map((review, index) => (
+            <div
+              key={review.reviewId || index}
+              style={{
+                marginBottom: "16px",
+                paddingBottom: "12px",
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div>
+                <strong>{getStudentName(review.reviewer)}</strong> —{" "}
+                {review.reviewer}
+              </div>
+              <div>Course: {review.subject || "No Subject"}</div>
+              <div>Group: {review.group}</div>
+              <div>Status: {review.status}</div>
+              <div>Start Date: {review.startDate || "-"}</div>
+              <div>Deadline: {review.endDate || "-"}</div>
+              <div>
+                Submitted File:{" "}
+                {review.fileName ? review.fileName : "Not uploaded yet"}
+              </div>
+
+              {review.fileUrl && (
+                <div
+                  style={{
+                    marginTop: "6px",
+                    display: "flex",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <a href={review.fileUrl} target="_blank" rel="noreferrer">
+                    View Uploaded File
+                  </a>
+                  <a href={review.fileUrl} download>
+                    Download File
+                  </a>
+                </div>
+              )}
+
+              <div style={{ marginTop: "8px" }}>
+                Current Marks: {Number(review.marks || 0)}/10
+              </div>
+
+              {renderMarksSection(review)}
+            </div>
+          ))
+        )}
       </div>
     );
   }
@@ -232,15 +551,33 @@ export default function TeacherDashboard() {
               <div
                 className="card"
                 style={{ cursor: "pointer" }}
-                onClick={() => setScreen("reviews")}
+                onClick={() => {
+                  setScreen("reviewsHome");
+                  setSelectedSubject(null);
+                  setShowCourseAllStudents(false);
+                  setShowCourseCompletedStudents(false);
+                  setShowCourseRemainingStudents(false);
+                }}
               >
-                <h3>Total Reviews</h3>
-                <p>{myReviews.length}</p>
+                <h3>Total Courses</h3>
+                <p>{totalCoursesCount}</p>
+              </div>
+
+              <div
+                className="card"
+                style={{ cursor: "pointer" }}
+                onClick={() => {
+                  setScreen("completedHome");
+                  setSelectedCompletedSubject(null);
+                }}
+              >
+                <h3>Completed Reviews</h3>
+                <p>{completedReviews}</p>
               </div>
 
               <div className="card">
-                <h3>Completed Reviews</h3>
-                <p>{completedReviews}</p>
+                <h3>Pending Reviews</h3>
+                <p>{pendingReviews}</p>
               </div>
             </div>
 
@@ -295,19 +632,6 @@ export default function TeacherDashboard() {
                     onChange={handleChange}
                   />
 
-                  <select
-                    name="reviewer"
-                    value={form.reviewer}
-                    onChange={handleChange}
-                  >
-                    <option value="">Select Student</option>
-                    {myStudents.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.name} ({student.id})
-                      </option>
-                    ))}
-                  </select>
-
                   <input
                     type="date"
                     name="startDate"
@@ -321,6 +645,57 @@ export default function TeacherDashboard() {
                     value={form.endDate}
                     onChange={handleChange}
                   />
+
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <button
+                      type="button"
+                      className="primary-btn"
+                      style={{ marginBottom: "12px" }}
+                      onClick={() => setShowStudentSelector(!showStudentSelector)}
+                    >
+                      {showStudentSelector
+                        ? "▲ Hide Students"
+                        : "▼ Select Students"}
+                    </button>
+
+                    {showStudentSelector && (
+                      <>
+                        <label style={{ display: "block", marginBottom: "10px" }}>
+                          Select Students
+                        </label>
+
+                        {myStudents.length === 0 ? (
+                          <p>No students assigned to you</p>
+                        ) : (
+                          <div>
+                            {myStudents.map((student) => (
+                              <label
+                                key={student.id}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "10px",
+                                  marginBottom: "10px",
+                                  padding: "10px 12px",
+                                  background: "rgba(255,255,255,0.03)",
+                                  borderRadius: "12px",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={form.reviewers.includes(student.id)}
+                                  onChange={() => handleReviewerToggle(student.id)}
+                                />
+                                <span>
+                                  {student.name} ({student.id})
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
 
                   <button className="primary-btn" type="submit">
                     Assign Review
@@ -481,7 +856,7 @@ export default function TeacherDashboard() {
               ) : (
                 getStudentAssignedReviews(selectedStudent.id).map((review, i) => (
                   <div
-                    key={i}
+                    key={review.reviewId || i}
                     style={{
                       marginBottom: "16px",
                       paddingBottom: "12px",
@@ -500,16 +875,22 @@ export default function TeacherDashboard() {
                     </div>
 
                     {review.fileUrl && (
-                      <div style={{ marginTop: "6px" }}>
+                      <div
+                        style={{
+                          marginTop: "6px",
+                          display: "flex",
+                          gap: "12px",
+                          flexWrap: "wrap",
+                        }}
+                      >
                         <a href={review.fileUrl} target="_blank" rel="noreferrer">
                           View Uploaded File
                         </a>
+                        <a href={review.fileUrl} download>
+                          Download File
+                        </a>
                       </div>
                     )}
-
-                    <div style={{ marginTop: "6px" }}>
-                      Feedback Count: {getFeedbackCount(review)}
-                    </div>
 
                     {renderMarksSection(review)}
                   </div>
@@ -519,97 +900,116 @@ export default function TeacherDashboard() {
           </>
         )}
 
-        {screen === "reviews" && (
+        {screen === "reviewsHome" && !selectedSubject && (
           <>
             <div className="admin-header">
-              <h2>Reviews</h2>
-              <p>Track all review activity, uploads, and marks</p>
+              <h2>Total Courses</h2>
+              <p>Select a course to view full review details</p>
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginBottom: "20px",
-              }}
-            >
+            <div style={{ marginBottom: "20px" }}>
               <button className="primary-btn" onClick={() => setScreen("home")}>
                 Back
               </button>
-
-              <button
-                className="primary-btn"
-                onClick={() => {
-                  setScreen("home");
-                  setShowCreateReview(true);
-                }}
-              >
-                Create Review
-              </button>
-            </div>
-
-            <div className="dashboard-grid">
-              <div className="card">
-                <h3>Total Reviews</h3>
-                <p>{myReviews.length}</p>
-              </div>
-
-              <div className="card">
-                <h3>Completed Reviews</h3>
-                <p>{completedReviews}</p>
-              </div>
-
-              <div className="card">
-                <h3>Pending Reviews</h3>
-                <p>{myReviews.length - completedReviews}</p>
-              </div>
             </div>
 
             <div className="card">
-              <h3>All Reviews List</h3>
+              <h3>Course / Subject Buttons</h3>
 
-              {myReviews.length === 0 ? (
+              {totalSubjectGroups.length === 0 ? (
                 <p>No reviews created yet</p>
               ) : (
-                myReviews.map((review, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      marginBottom: "16px",
-                      paddingBottom: "12px",
-                      borderBottom: "1px solid rgba(255,255,255,0.08)",
+                totalSubjectGroups.map((item, index) => (
+                  <button
+                    key={`${item.subject}-${index}`}
+                    className="primary-btn"
+                    style={{ marginRight: "12px", marginBottom: "12px" }}
+                    onClick={() => {
+                      setSelectedSubject(item.subject);
+                      setShowCourseAllStudents(false);
+                      setShowCourseCompletedStudents(false);
+                      setShowCourseRemainingStudents(false);
                     }}
                   >
-                    <div>
-                      <strong>{review.subject || "No Subject"}</strong>
-                    </div>
-                    <div>Group: {review.group}</div>
-                    <div>Reviewer: {getStudentName(review.reviewer)}</div>
-                    <div>Status: {review.status}</div>
-                    <div>Start Date: {review.startDate || "-"}</div>
-                    <div>Deadline: {review.endDate || "-"}</div>
-                    <div>
-                      Submitted File:{" "}
-                      {review.fileName ? review.fileName : "Not uploaded yet"}
-                    </div>
-
-                    {review.fileUrl && (
-                      <div style={{ marginTop: "6px" }}>
-                        <a href={review.fileUrl} target="_blank" rel="noreferrer">
-                          View Uploaded File
-                        </a>
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: "6px" }}>
-                      Feedback Count: {getFeedbackCount(review)}
-                    </div>
-
-                    {renderMarksSection(review)}
-                  </div>
+                    {item.subject}
+                  </button>
                 ))
               )}
             </div>
+          </>
+        )}
+
+        {screen === "reviewsHome" && selectedSubject && (
+          <>
+            <div className="admin-header">
+              <h2>{selectedSubject}</h2>
+              <p>Course-wise review tracking</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <button
+                className="primary-btn"
+                onClick={() => setSelectedSubject(null)}
+              >
+                Back
+              </button>
+            </div>
+
+            {renderTotalSubjectDetails(selectedSubject)}
+          </>
+        )}
+
+        {screen === "completedHome" && !selectedCompletedSubject && (
+          <>
+            <div className="admin-header">
+              <h2>Completed Reviews</h2>
+              <p>Select a course to view completed submissions and marks</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <button className="primary-btn" onClick={() => setScreen("home")}>
+                Back
+              </button>
+            </div>
+
+            <div className="card">
+              <h3>Course / Subject Buttons</h3>
+
+              {completedSubjectGroups.length === 0 ? (
+                <p>No completed reviews yet</p>
+              ) : (
+                completedSubjectGroups.map((item, index) => (
+                  <button
+                    key={`${item.subject}-${index}`}
+                    className="primary-btn"
+                    style={{ marginRight: "12px", marginBottom: "12px" }}
+                    onClick={() => setSelectedCompletedSubject(item.subject)}
+                  >
+                    {item.subject}
+                  </button>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {screen === "completedHome" && selectedCompletedSubject && (
+          <>
+            <div className="admin-header">
+              <h2>{selectedCompletedSubject}</h2>
+              <p>Completed submissions, files, and marks</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <button
+                className="primary-btn"
+                onClick={() => setSelectedCompletedSubject(null)}
+              >
+                Back
+              </button>
+            </div>
+
+            {renderCompletedSubjectDetails(selectedCompletedSubject)}
           </>
         )}
       </main>
