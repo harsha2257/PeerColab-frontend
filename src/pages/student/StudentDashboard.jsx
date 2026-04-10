@@ -19,31 +19,53 @@ export default function StudentDashboard() {
   const [feedbackInputs, setFeedbackInputs] = useState({});
 
   const currentStudent = useMemo(() => {
-    return students.find((s) => s.id === profile?.id) || null;
+    return (
+      students.find(
+        (s) => String(s.id || "").trim() === String(profile?.id || "").trim()
+      ) || null
+    );
   }, [students, profile]);
 
   const assignedTeacher = useMemo(() => {
     if (!currentStudent?.teacherId) return null;
-    return teachers.find((t) => t.id === currentStudent.teacherId) || null;
+
+    return (
+      teachers.find(
+        (t) =>
+          String(t.id || "").trim() ===
+          String(currentStudent.teacherId || "").trim()
+      ) || null
+    );
   }, [currentStudent, teachers]);
 
   const myReviews = useMemo(() => {
-    return reviews.filter((review) => review.reviewer === profile?.id);
+    return reviews.filter(
+      (review) =>
+        String(review.reviewer || "").trim() === String(profile?.id || "").trim()
+    );
   }, [reviews, profile]);
 
   const peerSubmittedReviews = useMemo(() => {
     if (!currentStudent?.teacherId) return [];
 
     const sameTeacherStudentIds = students
-      .filter((student) => student.teacherId === currentStudent.teacherId)
-      .map((student) => student.id);
+      .filter(
+        (student) =>
+          String(student.teacherId || "").trim() ===
+          String(currentStudent.teacherId || "").trim()
+      )
+      .map((student) => String(student.id || "").trim());
 
-    return reviews.filter(
-      (review) =>
-        review.reviewer !== profile?.id &&
-        sameTeacherStudentIds.includes(review.reviewer) &&
-        review.status === "Completed"
-    );
+    return reviews.filter((review) => {
+      const reviewerId = String(review.reviewer || "").trim();
+      const reviewStatus = String(review.status || "").trim().toLowerCase();
+
+      return (
+        reviewerId !== String(profile?.id || "").trim() &&
+        sameTeacherStudentIds.includes(reviewerId) &&
+        reviewStatus === "completed"
+      );
+    });
   }, [reviews, profile, students, currentStudent]);
 
   const totalReviews = myReviews.length;
@@ -51,13 +73,17 @@ export default function StudentDashboard() {
   const today = new Date();
   const todayString = today.toISOString().split("T")[0];
 
+  function isCompleted(review) {
+    return String(review.status || "").trim().toLowerCase() === "completed";
+  }
+
   function isActiveReview(review) {
     if (!review.startDate || !review.endDate) {
-      return review.status !== "Completed";
+      return !isCompleted(review);
     }
 
     return (
-      review.status !== "Completed" &&
+      !isCompleted(review) &&
       review.startDate <= todayString &&
       review.endDate >= todayString
     );
@@ -70,16 +96,16 @@ export default function StudentDashboard() {
 
   function isMissedDeadline(review) {
     if (!review.endDate) return false;
-    return review.status !== "Completed" && review.endDate < todayString;
+    return !isCompleted(review) && review.endDate < todayString;
   }
 
   const activeReviews = myReviews.filter(isActiveReview);
   const upcomingReviews = myReviews.filter(isUpcomingReview);
-  const completedReviews = myReviews.filter((r) => r.status === "Completed");
+  const completedReviews = myReviews.filter(isCompleted);
   const missedReviews = myReviews.filter(isMissedDeadline);
 
   function getReviewId(review) {
-    return review.reviewId;
+    return Number(review.reviewId);
   }
 
   function handleFileSelect(review, file) {
@@ -95,29 +121,37 @@ export default function StudentDashboard() {
   }
 
   async function handleSubmitReview(review) {
-    const reviewIndex = reviews.findIndex((r) => r.reviewId === review.reviewId);
+    const reviewIndex = reviews.findIndex(
+      (r) => Number(r.reviewId) === Number(review.reviewId)
+    );
     if (reviewIndex === -1) return;
 
     const file = selectedFiles[review.reviewId];
     if (!file) return;
 
-    await markReviewCompleted(reviewIndex, file);
+    const ok = await markReviewCompleted(reviewIndex, file);
 
-    setSelectedFiles((prev) => {
-      const updated = { ...prev };
-      delete updated[review.reviewId];
-      return updated;
-    });
+    if (ok) {
+      setSelectedFiles((prev) => {
+        const updated = { ...prev };
+        delete updated[review.reviewId];
+        return updated;
+      });
 
-    setActiveTab("completed");
+      setActiveTab("completed");
+    }
   }
 
   function getFeedbacksForReview(review) {
-    return feedbacks.filter((fb) => fb.reviewId === review.reviewId);
+    return feedbacks.filter(
+      (fb) => Number(fb.reviewId) === Number(review.reviewId)
+    );
   }
 
   function getStudentName(id) {
-    const student = students.find((s) => s.id === id);
+    const student = students.find(
+      (s) => String(s.id || "").trim() === String(id || "").trim()
+    );
     return student ? student.name : id;
   }
 
@@ -133,12 +167,14 @@ export default function StudentDashboard() {
 
     if (!text || !text.trim()) return;
 
-    await addFeedback(review.reviewId, profile?.id, text);
+    const ok = await addFeedback(review.reviewId, profile?.id, text);
 
-    setFeedbackInputs((prev) => ({
-      ...prev,
-      [review.reviewId]: "",
-    }));
+    if (ok) {
+      setFeedbackInputs((prev) => ({
+        ...prev,
+        [review.reviewId]: "",
+      }));
+    }
   }
 
   function renderReviewList(list, emptyText) {
@@ -148,6 +184,7 @@ export default function StudentDashboard() {
 
     return list.map((review, index) => {
       const feedbackCount = getFeedbacksForReview(review).length;
+      const completed = isCompleted(review);
 
       return (
         <div
@@ -163,7 +200,7 @@ export default function StudentDashboard() {
           </div>
 
           <div>Group: {review.group || "Not assigned"}</div>
-          <div>Status: {review.status}</div>
+          <div>Status: {review.status || "-"}</div>
           <div>Start Date: {review.startDate || "-"}</div>
           <div>Deadline: {review.endDate || "-"}</div>
 
@@ -177,11 +214,7 @@ export default function StudentDashboard() {
 
           {review.fileUrl && (
             <div style={{ marginTop: "6px" }}>
-              <a
-                href={`http://localhost:5000${review.fileUrl}`}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href={review.fileUrl} target="_blank" rel="noreferrer">
                 View Uploaded File
               </a>
             </div>
@@ -199,11 +232,11 @@ export default function StudentDashboard() {
             View Feedback
           </button>
 
-          {review.status !== "Completed" && !isMissedDeadline(review) && (
+          {!completed && !isMissedDeadline(review) && (
             <div style={{ marginTop: "12px" }}>
               <input
                 type="file"
-                onChange={(e) => handleFileSelect(review, e.target.files[0])}
+                onChange={(e) => handleFileSelect(review, e.target.files?.[0])}
               />
 
               {selectedFiles[review.reviewId] && (
@@ -222,7 +255,7 @@ export default function StudentDashboard() {
             </div>
           )}
 
-          {review.status === "Completed" && (
+          {completed && (
             <button
               className="primary-btn"
               style={{ marginTop: "10px", background: "#16a34a" }}
@@ -274,7 +307,9 @@ export default function StudentDashboard() {
           <h3>Assignment Status</h3>
           <div style={{ marginTop: "8px" }}>
             Teacher:{" "}
-            <strong>{assignedTeacher ? assignedTeacher.name : "Not assigned yet"}</strong>
+            <strong>
+              {assignedTeacher ? assignedTeacher.name : "Not assigned yet"}
+            </strong>
           </div>
           <div style={{ marginTop: "6px" }}>
             Status:{" "}
@@ -333,31 +368,19 @@ export default function StudentDashboard() {
               marginBottom: "20px",
             }}
           >
-            <button
-              className="primary-btn"
-              onClick={() => setActiveTab("active")}
-            >
+            <button className="primary-btn" onClick={() => setActiveTab("active")}>
               Active
             </button>
 
-            <button
-              className="primary-btn"
-              onClick={() => setActiveTab("upcoming")}
-            >
+            <button className="primary-btn" onClick={() => setActiveTab("upcoming")}>
               Upcoming
             </button>
 
-            <button
-              className="primary-btn"
-              onClick={() => setActiveTab("completed")}
-            >
+            <button className="primary-btn" onClick={() => setActiveTab("completed")}>
               Completed
             </button>
 
-            <button
-              className="primary-btn"
-              onClick={() => setActiveTab("missed")}
-            >
+            <button className="primary-btn" onClick={() => setActiveTab("missed")}>
               Deadline Missed
             </button>
 
@@ -402,7 +425,10 @@ export default function StudentDashboard() {
               <h3>Give Feedback to Other Students</h3>
 
               {!assignedTeacher ? (
-                <p>You need a teacher assignment before peer feedback becomes available</p>
+                <p>
+                  You need a teacher assignment before peer feedback becomes
+                  available
+                </p>
               ) : peerSubmittedReviews.length === 0 ? (
                 <p>No peer submissions available yet</p>
               ) : (
@@ -424,11 +450,7 @@ export default function StudentDashboard() {
 
                     {review.fileUrl && (
                       <div style={{ marginTop: "6px" }}>
-                        <a
-                          href={`http://localhost:5000${review.fileUrl}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
+                        <a href={review.fileUrl} target="_blank" rel="noreferrer">
                           View Submission
                         </a>
                       </div>

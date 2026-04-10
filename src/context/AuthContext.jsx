@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from "react";
 
 const AuthContext = createContext();
 
-const API_URL = "http://localhost:5000";
+const API_URL = "http://localhost:8080";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -30,32 +30,31 @@ export function AuthProvider({ children }) {
         },
         body: JSON.stringify({
           id: idOrEmail,
+          email: idOrEmail,
           password,
         }),
       });
 
       const data = await response.json();
 
-      if (!response.ok || !data.success) {
+      if (!response.ok || !data || !data.id) {
         return {
           error: {
-            message: data.message || "Invalid credentials",
+            message: "Invalid credentials",
           },
         };
       }
 
-      const dbUser = data.user;
-
       const userData = {
-        id: dbUser.id,
-        email: dbUser.email,
+        id: data.id,
+        email: data.email,
       };
 
       const profileData = {
-        id: dbUser.id,
-        role: dbUser.role,
-        full_name: dbUser.full_name,
-        email: dbUser.email,
+        id: data.id,
+        role: data.role,
+        full_name: data.full_name,
+        email: data.email,
       };
 
       setUser(userData);
@@ -66,6 +65,7 @@ export function AuthProvider({ children }) {
 
       return { error: null };
     } catch (err) {
+      console.log("Login error:", err);
       return {
         error: {
           message: "Server connection failed",
@@ -109,6 +109,7 @@ export function AuthProvider({ children }) {
 
       return { error: null };
     } catch (err) {
+      console.log("Signup error:", err);
       return {
         error: {
           message: "Server connection failed",

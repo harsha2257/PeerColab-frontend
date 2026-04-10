@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const AppDataContext = createContext();
 
-const API_URL = "http://localhost:5000";
+const API_URL = "http://localhost:8080";
 
 export function AppDataProvider({ children }) {
   const [teachers, setTeachers] = useState([]);
@@ -21,7 +21,18 @@ export function AppDataProvider({ children }) {
       const res = await fetch(`${API_URL}/users`);
       const data = await res.json();
 
-      const teacherList = data
+      const normalizedUsers = Array.isArray(data)
+        ? data.map((u) => ({
+            ...u,
+            id: String(u.id || "").trim(),
+            email: String(u.email || "").trim(),
+            full_name: String(u.full_name || "").trim(),
+            teacher_id: u.teacher_id ? String(u.teacher_id).trim() : "",
+            role: String(u.role || "").trim().toLowerCase(),
+          }))
+        : [];
+
+      const teacherList = normalizedUsers
         .filter((u) => u.role === "teacher")
         .map((u) => ({
           id: u.id,
@@ -29,7 +40,7 @@ export function AppDataProvider({ children }) {
           email: u.email,
         }));
 
-      const studentList = data
+      const studentList = normalizedUsers
         .filter((u) => u.role === "student")
         .map((u) => ({
           id: u.id,
@@ -40,6 +51,10 @@ export function AppDataProvider({ children }) {
 
       setTeachers(teacherList);
       setStudents(studentList);
+
+      console.log("Fetched users:", normalizedUsers);
+      console.log("Teachers:", teacherList);
+      console.log("Students:", studentList);
     } catch (err) {
       console.log("Fetch users error:", err);
     }
@@ -50,22 +65,28 @@ export function AppDataProvider({ children }) {
       const res = await fetch(`${API_URL}/reviews`);
       const data = await res.json();
 
-      const reviewList = data.map((r) => ({
-        reviewId: r.review_id,
-        subject: r.subject,
-        group: r.group_name,
-        reviewer: r.reviewer_id,
-        teacherId: r.teacher_id,
-        status: r.status,
-        marks: Number(r.marks || 0),
-        fileName: r.original_file_name || r.file_name || "",
-        fileUrl: r.file_path || "",
-        submittedAt: r.submitted_at || "",
-        startDate: r.start_date ? String(r.start_date).split("T")[0] : "",
-        endDate: r.end_date ? String(r.end_date).split("T")[0] : "",
-      }));
+      const reviewList = Array.isArray(data)
+        ? data.map((r) => ({
+            reviewId: Number(r.review_id),
+            subject: String(r.subject || "").trim(),
+            group: String(r.group_name || "").trim(),
+            reviewer: String(r.reviewer_id || "").trim(),
+            teacherId: String(r.teacher_id || "").trim(),
+            status: String(r.status || "").trim(),
+            marks: Number(r.marks || 0),
+            fileName: String(r.original_file_name || r.file_name || "").trim(),
+            fileUrl:
+              r.file_name && String(r.file_name).trim() !== ""
+                ? `${API_URL}/files/${String(r.file_name).trim()}`
+                : "",
+            submittedAt: r.submitted_at || "",
+            startDate: r.start_date ? String(r.start_date).split("T")[0] : "",
+            endDate: r.end_date ? String(r.end_date).split("T")[0] : "",
+          }))
+        : [];
 
       setReviews(reviewList);
+      console.log("Reviews:", reviewList);
     } catch (err) {
       console.log("Fetch reviews error:", err);
     }
@@ -76,15 +97,18 @@ export function AppDataProvider({ children }) {
       const res = await fetch(`${API_URL}/feedbacks`);
       const data = await res.json();
 
-      const feedbackList = data.map((f) => ({
-        feedbackId: f.feedback_id,
-        reviewId: f.review_id,
-        reviewerId: f.reviewer_id,
-        feedbackText: f.feedback_text,
-        createdAt: f.created_at,
-      }));
+      const feedbackList = Array.isArray(data)
+        ? data.map((f) => ({
+            feedbackId: Number(f.feedback_id),
+            reviewId: Number(f.review_id),
+            reviewerId: String(f.reviewer_id || "").trim(),
+            feedbackText: String(f.feedback_text || "").trim(),
+            createdAt: f.created_at || "",
+          }))
+        : [];
 
       setFeedbacks(feedbackList);
+      console.log("Feedbacks:", feedbackList);
     } catch (err) {
       console.log("Fetch feedbacks error:", err);
     }
@@ -92,19 +116,21 @@ export function AppDataProvider({ children }) {
 
   async function addStudent(student) {
     try {
-      await fetch(`${API_URL}/users`, {
+      const response = await fetch(`${API_URL}/users`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          id: student.id,
-          full_name: student.name,
-          email: student.email,
-          password: student.password || "student123",
+          id: String(student.id || "").trim(),
+          full_name: String(student.name || "").trim(),
+          email: String(student.email || "").trim().toLowerCase(),
+          password: String(student.password || "student123").trim(),
           role: "student",
         }),
       });
+
+      if (!response.ok) return false;
 
       await fetchUsers();
       return true;
@@ -119,9 +145,11 @@ export function AppDataProvider({ children }) {
       const student = students[index];
       if (!student) return false;
 
-      await fetch(`${API_URL}/users/${student.id}`, {
+      const response = await fetch(`${API_URL}/users/${student.id}`, {
         method: "DELETE",
       });
+
+      if (!response.ok) return false;
 
       await fetchUsers();
       return true;
@@ -133,19 +161,21 @@ export function AppDataProvider({ children }) {
 
   async function addTeacher(teacher) {
     try {
-      await fetch(`${API_URL}/users`, {
+      const response = await fetch(`${API_URL}/users`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          id: teacher.id,
-          full_name: teacher.name,
-          email: teacher.email,
-          password: teacher.password || "teacher123",
+          id: String(teacher.id || "").trim(),
+          full_name: String(teacher.name || "").trim(),
+          email: String(teacher.email || "").trim().toLowerCase(),
+          password: String(teacher.password || "teacher123").trim(),
           role: "teacher",
         }),
       });
+
+      if (!response.ok) return false;
 
       await fetchUsers();
       return true;
@@ -160,9 +190,11 @@ export function AppDataProvider({ children }) {
       const teacher = teachers[index];
       if (!teacher) return false;
 
-      await fetch(`${API_URL}/users/${teacher.id}`, {
+      const response = await fetch(`${API_URL}/users/${teacher.id}`, {
         method: "DELETE",
       });
+
+      if (!response.ok) return false;
 
       await fetchUsers();
       return true;
@@ -179,7 +211,10 @@ export function AppDataProvider({ children }) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ studentId, teacherId }),
+        body: JSON.stringify({
+          studentId: String(studentId || "").trim(),
+          teacherId: String(teacherId || "").trim(),
+        }),
       });
 
       const data = await response.json();
@@ -206,25 +241,52 @@ export function AppDataProvider({ children }) {
     teacherId = ""
   ) {
     try {
-      await fetch(`${API_URL}/reviews`, {
+      const response = await fetch(`${API_URL}/reviews`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          subject,
-          group_name: group,
-          reviewer_id: reviewer,
-          teacher_id: teacherId,
-          start_date: startDate,
-          end_date: endDate,
+          subject: String(subject || "").trim(),
+          group_name: String(group || "").trim(),
+          reviewer_id: String(reviewer || "").trim(),
+          teacher_id: String(teacherId || "").trim(),
+          start_date: startDate || "",
+          end_date: endDate || "",
         }),
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.log("Assign review failed:", text);
+        return false;
+      }
 
       await fetchReviews();
       return true;
     } catch (error) {
       console.log("Assign review error:", error);
+      return false;
+    }
+  }
+
+  async function deleteReview(reviewId) {
+    try {
+      const response = await fetch(`${API_URL}/reviews/${reviewId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        console.log("Delete review failed:", data);
+        return false;
+      }
+
+      await fetchReviews();
+      return true;
+    } catch (error) {
+      console.log("Delete review error:", error);
       return false;
     }
   }
@@ -237,10 +299,17 @@ export function AppDataProvider({ children }) {
       const formData = new FormData();
       formData.append("file", file);
 
-      await fetch(`${API_URL}/reviews/${review.reviewId}/upload`, {
+      const response = await fetch(`${API_URL}/reviews/${review.reviewId}/upload`, {
         method: "POST",
         body: formData,
       });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        console.log("Upload review file failed:", data);
+        return false;
+      }
 
       await fetchReviews();
       return true;
@@ -255,7 +324,7 @@ export function AppDataProvider({ children }) {
       const review = reviews[index];
       if (!review?.reviewId) return false;
 
-      await fetch(`${API_URL}/reviews/${review.reviewId}/marks`, {
+      const response = await fetch(`${API_URL}/reviews/${review.reviewId}/marks`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -264,6 +333,13 @@ export function AppDataProvider({ children }) {
           marks: Number(marks),
         }),
       });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        console.log("Update marks failed:", data);
+        return false;
+      }
 
       await fetchReviews();
       return true;
@@ -277,17 +353,23 @@ export function AppDataProvider({ children }) {
     if (!feedbackText?.trim()) return false;
 
     try {
-      await fetch(`${API_URL}/feedbacks`, {
+      const response = await fetch(`${API_URL}/feedbacks`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          review_id: reviewId,
-          reviewer_id: reviewerId,
-          feedback_text: feedbackText,
+          review_id: Number(reviewId),
+          reviewer_id: String(reviewerId || "").trim(),
+          feedback_text: String(feedbackText || "").trim(),
         }),
       });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.log("Add feedback failed:", text);
+        return false;
+      }
 
       await fetchFeedbacks();
       return true;
@@ -302,9 +384,11 @@ export function AppDataProvider({ children }) {
       const feedback = feedbacks[index];
       if (!feedback?.feedbackId) return false;
 
-      await fetch(`${API_URL}/feedbacks/${feedback.feedbackId}`, {
+      const response = await fetch(`${API_URL}/feedbacks/${feedback.feedbackId}`, {
         method: "DELETE",
       });
+
+      if (!response.ok) return false;
 
       await fetchFeedbacks();
       return true;
@@ -330,6 +414,7 @@ export function AppDataProvider({ children }) {
         deleteTeacher,
         assignTeacherToStudent,
         assignReview,
+        deleteReview,
         markReviewCompleted,
         updateMarks,
         addFeedback,

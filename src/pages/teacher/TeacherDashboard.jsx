@@ -4,21 +4,18 @@ import { useAppData } from "../../context/AppDataContext";
 
 export default function TeacherDashboard() {
   const { profile, signOut } = useAuth();
-  const { students, reviews, assignReview, updateMarks } = useAppData();
+  const { students, reviews, assignReview, updateMarks, deleteReview } = useAppData();
 
   const [screen, setScreen] = useState("home");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showCreateReview, setShowCreateReview] = useState(false);
   const [showStudentSelector, setShowStudentSelector] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState(null);
-  const [selectedCompletedSubject, setSelectedCompletedSubject] =
-    useState(null);
+  const [selectedCompletedSubject, setSelectedCompletedSubject] = useState(null);
 
   const [showCourseAllStudents, setShowCourseAllStudents] = useState(false);
-  const [showCourseCompletedStudents, setShowCourseCompletedStudents] =
-    useState(false);
-  const [showCourseRemainingStudents, setShowCourseRemainingStudents] =
-    useState(false);
+  const [showCourseCompletedStudents, setShowCourseCompletedStudents] = useState(false);
+  const [showCourseRemainingStudents, setShowCourseRemainingStudents] = useState(false);
 
   const [marksInputs, setMarksInputs] = useState({});
   const [savedMarks, setSavedMarks] = useState({});
@@ -32,11 +29,17 @@ export default function TeacherDashboard() {
   });
 
   const myStudents = useMemo(() => {
-    return students.filter((s) => s.teacherId === profile?.id);
+    return students.filter(
+      (s) => String(s.teacherId || "").trim() === String(profile?.id || "").trim()
+    );
   }, [students, profile]);
 
   const myReviews = useMemo(() => {
-    return reviews.filter((r) => myStudents.some((s) => s.id === r.reviewer));
+    return reviews.filter((r) =>
+      myStudents.some(
+        (s) => String(s.id || "").trim() === String(r.reviewer || "").trim()
+      )
+    );
   }, [reviews, myStudents]);
 
   const totalCoursesCount = useMemo(() => {
@@ -47,11 +50,11 @@ export default function TeacherDashboard() {
   }, [myReviews]);
 
   const completedReviews = myReviews.filter(
-    (r) => r.status === "Completed"
+    (r) => String(r.status || "").trim().toLowerCase() === "completed"
   ).length;
 
   const pendingReviews = myReviews.filter(
-    (r) => r.status !== "Completed"
+    (r) => String(r.status || "").trim().toLowerCase() !== "completed"
   ).length;
 
   const totalSubjectGroups = useMemo(() => {
@@ -67,8 +70,12 @@ export default function TeacherDashboard() {
       subject,
       reviews: reviewList,
       total: reviewList.length,
-      completed: reviewList.filter((r) => r.status === "Completed").length,
-      pending: reviewList.filter((r) => r.status !== "Completed").length,
+      completed: reviewList.filter(
+        (r) => String(r.status || "").trim().toLowerCase() === "completed"
+      ).length,
+      pending: reviewList.filter(
+        (r) => String(r.status || "").trim().toLowerCase() !== "completed"
+      ).length,
     }));
   }, [myReviews]);
 
@@ -76,7 +83,7 @@ export default function TeacherDashboard() {
     const grouped = {};
 
     myReviews
-      .filter((review) => review.status === "Completed")
+      .filter((review) => String(review.status || "").trim().toLowerCase() === "completed")
       .forEach((review) => {
         const subjectName = review.subject || "No Subject";
         if (!grouped[subjectName]) grouped[subjectName] = [];
@@ -104,14 +111,19 @@ export default function TeacherDashboard() {
   }
 
   function getStudentAssignedReviews(studentId) {
-    return reviews.filter((r) => r.reviewer === studentId);
+    return reviews.filter(
+      (r) => String(r.reviewer || "").trim() === String(studentId || "").trim()
+    );
   }
 
   function getStudentCompletionPercentage(studentId) {
     const assigned = getStudentAssignedReviews(studentId);
     if (assigned.length === 0) return 0;
 
-    const completed = assigned.filter((r) => r.status === "Completed").length;
+    const completed = assigned.filter(
+      (r) => String(r.status || "").trim().toLowerCase() === "completed"
+    ).length;
+
     return Math.round((completed / assigned.length) * 100);
   }
 
@@ -163,56 +175,51 @@ export default function TeacherDashboard() {
     setScreen("reviewsHome");
   }
 
-  function getRealReviewIndex(review) {
-    return reviews.findIndex((r) => r === review);
-  }
-
   function getStudentName(id) {
-    const student = students.find((s) => s.id === id);
+    const student = students.find(
+      (s) => String(s.id || "").trim() === String(id || "").trim()
+    );
     return student ? student.name : id;
   }
 
   function handleMarksInput(review, value) {
-    const realIndex = getRealReviewIndex(review);
-
     setMarksInputs((prev) => ({
       ...prev,
-      [realIndex]: value,
+      [review.reviewId]: value,
     }));
 
     setSavedMarks((prev) => ({
       ...prev,
-      [realIndex]: false,
+      [review.reviewId]: false,
     }));
   }
 
   async function handleSaveMarks(review) {
-    const realIndex = getRealReviewIndex(review);
+    const realIndex = reviews.findIndex(
+      (r) => Number(r.reviewId) === Number(review.reviewId)
+    );
 
     const value =
-      marksInputs[realIndex] !== undefined
-        ? marksInputs[realIndex]
+      marksInputs[review.reviewId] !== undefined
+        ? marksInputs[review.reviewId]
         : review.marks || 0;
 
     await updateMarks(realIndex, value);
 
     setSavedMarks((prev) => ({
       ...prev,
-      [realIndex]: true,
+      [review.reviewId]: true,
     }));
   }
 
   function getInputValue(review) {
-    const realIndex = getRealReviewIndex(review);
-
-    return marksInputs[realIndex] !== undefined
-      ? marksInputs[realIndex]
+    return marksInputs[review.reviewId] !== undefined
+      ? marksInputs[review.reviewId]
       : review.marks || 0;
   }
 
   function renderMarksSection(review) {
-    const realIndex = getRealReviewIndex(review);
-    const isSaved = savedMarks[realIndex];
+    const isSaved = savedMarks[review.reviewId];
 
     return (
       <div style={{ marginTop: "10px" }}>
@@ -252,6 +259,13 @@ export default function TeacherDashboard() {
     );
   }
 
+  async function handleDeleteReview(reviewId) {
+    const ok = await deleteReview(reviewId);
+    if (!ok) {
+      alert("Failed to delete review");
+    }
+  }
+
   function getSubjectReviews(subjectName) {
     return myReviews.filter(
       (review) => (review.subject || "No Subject") === subjectName
@@ -260,13 +274,70 @@ export default function TeacherDashboard() {
 
   function getSubjectCompletedReviews(subjectName) {
     return getSubjectReviews(subjectName).filter(
-      (review) => review.status === "Completed"
+      (review) => String(review.status || "").trim().toLowerCase() === "completed"
     );
   }
 
   function getSubjectRemainingReviews(subjectName) {
     return getSubjectReviews(subjectName).filter(
-      (review) => review.status !== "Completed"
+      (review) => String(review.status || "").trim().toLowerCase() !== "completed"
+    );
+  }
+
+  function renderClassProgressDetails() {
+    return (
+      <div className="card">
+        <h3>All Students Progress</h3>
+        {myStudents.length === 0 ? (
+          <p>No students assigned to you yet</p>
+        ) : (
+          myStudents.map((student) => {
+            const percent = getStudentCompletionPercentage(student.id);
+
+            return (
+              <div
+                key={student.id}
+                style={{
+                  marginBottom: "18px",
+                  paddingBottom: "12px",
+                  borderBottom: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: "8px",
+                  }}
+                >
+                  <span>
+                    <strong>{student.name}</strong> — {student.id}
+                  </span>
+                  <span>{percent}%</span>
+                </div>
+
+                <div
+                  style={{
+                    width: "100%",
+                    height: "12px",
+                    background: "#1e293b",
+                    borderRadius: "999px",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${percent}%`,
+                      height: "100%",
+                      background: "linear-gradient(135deg, #2563eb, #7c3aed)",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     );
   }
 
@@ -290,9 +361,7 @@ export default function TeacherDashboard() {
           <div
             className="card"
             style={{ cursor: "pointer" }}
-            onClick={() =>
-              setShowCourseCompletedStudents(!showCourseCompletedStudents)
-            }
+            onClick={() => setShowCourseCompletedStudents(!showCourseCompletedStudents)}
           >
             <h3>Completed Submission</h3>
             <p>{completedList.length}</p>
@@ -301,9 +370,7 @@ export default function TeacherDashboard() {
           <div
             className="card"
             style={{ cursor: "pointer" }}
-            onClick={() =>
-              setShowCourseRemainingStudents(!showCourseRemainingStudents)
-            }
+            onClick={() => setShowCourseRemainingStudents(!showCourseRemainingStudents)}
           >
             <h3>Remaining Students</h3>
             <p>{remainingList.length}</p>
@@ -339,12 +406,20 @@ export default function TeacherDashboard() {
                   }}
                 >
                   <div>
-                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
-                    {review.reviewer}
+                    <strong>{getStudentName(review.reviewer)}</strong> — {review.reviewer}
                   </div>
                   <div>Status: {review.status}</div>
                   <div>Group: {review.group}</div>
                   <div>Marks: {review.marks}/10</div>
+
+                  <div style={{ marginTop: "10px" }}>
+                    <button
+                      className="primary-btn"
+                      onClick={() => handleDeleteReview(review.reviewId)}
+                    >
+                      Delete Review
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -367,16 +442,14 @@ export default function TeacherDashboard() {
                   }}
                 >
                   <div>
-                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
-                    {review.reviewer}
+                    <strong>{getStudentName(review.reviewer)}</strong> — {review.reviewer}
                   </div>
                   <div>Status: {review.status}</div>
                   <div>Group: {review.group}</div>
                   <div>Start Date: {review.startDate || "-"}</div>
                   <div>Deadline: {review.endDate || "-"}</div>
                   <div>
-                    Submitted File:{" "}
-                    {review.fileName ? review.fileName : "Not uploaded yet"}
+                    Submitted File: {review.fileName ? review.fileName : "Not uploaded yet"}
                   </div>
 
                   {review.fileUrl && (
@@ -398,6 +471,15 @@ export default function TeacherDashboard() {
                   )}
 
                   {renderMarksSection(review)}
+
+                  <div style={{ marginTop: "10px" }}>
+                    <button
+                      className="primary-btn"
+                      onClick={() => handleDeleteReview(review.reviewId)}
+                    >
+                      Delete Review
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -420,14 +502,22 @@ export default function TeacherDashboard() {
                   }}
                 >
                   <div>
-                    <strong>{getStudentName(review.reviewer)}</strong> —{" "}
-                    {review.reviewer}
+                    <strong>{getStudentName(review.reviewer)}</strong> — {review.reviewer}
                   </div>
                   <div>Status: {review.status}</div>
                   <div>Group: {review.group}</div>
                   <div>Start Date: {review.startDate || "-"}</div>
                   <div>Deadline: {review.endDate || "-"}</div>
                   <div>Submitted File: Not uploaded yet</div>
+
+                  <div style={{ marginTop: "10px" }}>
+                    <button
+                      className="primary-btn"
+                      onClick={() => handleDeleteReview(review.reviewId)}
+                    >
+                      Delete Review
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -456,8 +546,7 @@ export default function TeacherDashboard() {
               }}
             >
               <div>
-                <strong>{getStudentName(review.reviewer)}</strong> —{" "}
-                {review.reviewer}
+                <strong>{getStudentName(review.reviewer)}</strong> — {review.reviewer}
               </div>
               <div>Course: {review.subject || "No Subject"}</div>
               <div>Group: {review.group}</div>
@@ -465,8 +554,7 @@ export default function TeacherDashboard() {
               <div>Start Date: {review.startDate || "-"}</div>
               <div>Deadline: {review.endDate || "-"}</div>
               <div>
-                Submitted File:{" "}
-                {review.fileName ? review.fileName : "Not uploaded yet"}
+                Submitted File: {review.fileName ? review.fileName : "Not uploaded yet"}
               </div>
 
               {review.fileUrl && (
@@ -492,6 +580,15 @@ export default function TeacherDashboard() {
               </div>
 
               {renderMarksSection(review)}
+
+              <div style={{ marginTop: "10px" }}>
+                <button
+                  className="primary-btn"
+                  onClick={() => handleDeleteReview(review.reviewId)}
+                >
+                  Delete Review
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -581,7 +678,11 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            <div className="card">
+            <div
+              className="card"
+              style={{ cursor: "pointer" }}
+              onClick={() => setScreen("classProgress")}
+            >
               <h3>Class Progress</h3>
               <div
                 style={{
@@ -653,9 +754,7 @@ export default function TeacherDashboard() {
                       style={{ marginBottom: "12px" }}
                       onClick={() => setShowStudentSelector(!showStudentSelector)}
                     >
-                      {showStudentSelector
-                        ? "▲ Hide Students"
-                        : "▼ Select Students"}
+                      {showStudentSelector ? "▲ Hide Students" : "▼ Select Students"}
                     </button>
 
                     {showStudentSelector && (
@@ -703,6 +802,23 @@ export default function TeacherDashboard() {
                 </form>
               </div>
             )}
+          </>
+        )}
+
+        {screen === "classProgress" && (
+          <>
+            <div className="admin-header">
+              <h2>Class Progress</h2>
+              <p>Each student's review completion progress</p>
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <button className="primary-btn" onClick={() => setScreen("home")}>
+                Back
+              </button>
+            </div>
+
+            {renderClassProgressDetails()}
           </>
         )}
 
@@ -765,8 +881,7 @@ export default function TeacherDashboard() {
                           style={{
                             width: `${percent}%`,
                             height: "100%",
-                            background:
-                              "linear-gradient(135deg, #2563eb, #7c3aed)",
+                            background: "linear-gradient(135deg, #2563eb, #7c3aed)",
                           }}
                         />
                       </div>
@@ -810,7 +925,7 @@ export default function TeacherDashboard() {
                 <p>
                   {getStudentAssignedReviews(selectedStudent.id).length -
                     getStudentAssignedReviews(selectedStudent.id).filter(
-                      (r) => r.status === "Completed"
+                      (r) => String(r.status || "").trim().toLowerCase() === "completed"
                     ).length}
                 </p>
               </div>
@@ -893,6 +1008,15 @@ export default function TeacherDashboard() {
                     )}
 
                     {renderMarksSection(review)}
+
+                    <div style={{ marginTop: "10px" }}>
+                      <button
+                        className="primary-btn"
+                        onClick={() => handleDeleteReview(review.reviewId)}
+                      >
+                        Delete Review
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
