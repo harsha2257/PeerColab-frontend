@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const AppDataContext = createContext();
 
-const API_URL = "https://your-backend-name.up.railway.app";
+const API_URL = "https://peercolab-backend-production.up.railway.app";
 
 export function AppDataProvider({ children }) {
   const [teachers, setTeachers] = useState([]);
