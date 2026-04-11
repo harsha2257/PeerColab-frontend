@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 const AppDataContext = createContext();
 
-const API_URL = "http://localhost:8080";
+const API_URL = "https://your-backend-name.up.railway.app";
 
 export function AppDataProvider({ children }) {
   const [teachers, setTeachers] = useState([]);
